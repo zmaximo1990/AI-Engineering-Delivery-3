@@ -1,11 +1,11 @@
 """LCEL RAG chain: retrieve, attach context, generate, assemble sources."""
 
 import logging
-from typing import Protocol
 
 from langchain_core.documents import Document
 from langchain_core.exceptions import OutputParserException
 from langchain_core.runnables import Runnable, RunnableLambda, RunnablePassthrough
+from langchain_core.vectorstores import VectorStoreRetriever
 from openai import LengthFinishReasonError
 from pydantic import ValidationError
 
@@ -14,15 +14,9 @@ from constants import DEFAULT_PROVIDER, RETRY_ATTEMPTS, TRUNCATED_REASONS
 from factory import LLMFactory
 from prompts import prompt
 from schemas import LLMAnswer, LLMConfig, Provider, RAGResponse
+from vectorstore import get_vector_store
 
 logger = logging.getLogger(__name__)
-
-
-class QueryRetriever(Protocol):
-    """Anything that can turn a question into documents. ``invoke`` is enough."""
-
-    def invoke(self, query: str) -> list[Document]:
-        """Return the documents closest to ``query``."""
 
 
 def _finish_reason(raw) -> str | None:
@@ -116,31 +110,35 @@ def assemble_response(payload: dict) -> RAGResponse:
     )
 
 
-def compose_rag_chain(retriever: QueryRetriever, generator: Runnable) -> Runnable:
+def compose_rag_chain(generator: Runnable) -> Runnable:
     """Propagate the question, the documents, and the formatted context.
 
     Each ``RunnablePassthrough.assign`` adds a key and keeps the previous
     ones, so the closing ``RunnableLambda`` can still read the documents
     when it assembles the sources.
     """
+
+    retriever: VectorStoreRetriever = get_vector_store().as_retriever()
+
     return (
         RunnablePassthrough.assign(
-            documents=lambda inputs: retriever.invoke(inputs["question"]),
+            documents=lambda inputs: retriever.invoke(inputs["question"]), # run RAG
         )
         | RunnablePassthrough.assign(
-            context=lambda inputs: format_documents(inputs["documents"]),
+            context=lambda inputs: format_documents(inputs["documents"]), # format RAG response as LLM prompt context
         )
-        | RunnablePassthrough.assign(answer=generator)
-        | RunnableLambda(assemble_response)
+        | RunnablePassthrough.assign(answer=generator) # the LLM invoke
+        | RunnableLambda(assemble_response) # assemble the final response after LLM answered
     )
 
 
-def build_chain(config: LLMConfig, retriever: QueryRetriever) -> Runnable:
+def build_chain(config: LLMConfig) -> Runnable:
     """Compose retrieval, structured generation, and source assembly.
 
     Structured output replaces a ``{formato}`` prompt variable. The schema
     is ``LLMAnswer``; source files are attached after the model returns.
     """
+
     client: BaseLLMClient = LLMFactory.create_client(config)
     generator: Runnable = (
         prompt
@@ -156,18 +154,7 @@ def build_chain(config: LLMConfig, retriever: QueryRetriever) -> Runnable:
         ),
         stop_after_attempt=RETRY_ATTEMPTS,
     )
-    return compose_rag_chain(retriever, generator)
-
-
-def prepare_index() -> int:
-    """Open the local store and index ``data/`` when the collection is empty.
-
-    Called before the prompt so the embedding model is loaded once, up front.
-    """
-    from ingestion import ingest_if_needed
-    from vectorstore import get_vector_memory
-
-    return ingest_if_needed(get_vector_memory())
+    return compose_rag_chain(generator)
 
 
 def _default_config() -> LLMConfig:
@@ -189,16 +176,12 @@ async def get_rag_response(
         raise ValueError("query must not be empty")
 
     llm_config: LLMConfig = config or _default_config()
-    prepare_index()
-    from vectorstore import get_vector_memory
-
-    retriever = get_vector_memory().as_retriever()
 
     logger.info(
         "get_rag_response started (provider=%s, %d chars)",
         llm_config.provider.value,
         len(cleaned),
     )
-    result = await build_chain(llm_config, retriever).ainvoke({"question": cleaned})
+    result = await build_chain(llm_config).ainvoke({"question": cleaned})
     logger.info("get_rag_response finished")
     return result

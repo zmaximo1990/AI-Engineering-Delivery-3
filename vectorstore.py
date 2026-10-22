@@ -27,7 +27,7 @@ class VectorMemoryError(Exception):
     """A vector store read or write failed, or the embedding model does not match."""
 
 
-class VectorMemoryManager:
+class VectorStoreManager:
     """CRUD wrapper around a local Chroma collection.
 
     Indexing and search share one embedding model. A different model would
@@ -146,12 +146,12 @@ class VectorMemoryManager:
         )
 
 
-_manager: VectorMemoryManager | None = None
+_manager: VectorStoreManager | None = None
 
 
-def get_vector_memory() -> VectorMemoryManager:
+def get_vector_store() -> VectorStoreManager:
     """Return the process-wide store so the embedding model is loaded once."""
     global _manager
     if _manager is None:
-        _manager = VectorMemoryManager()
+        _manager = VectorStoreManager()
     return _manager

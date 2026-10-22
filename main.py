@@ -1,6 +1,7 @@
 # Load env before the modules that read it at import time.
 from pathlib import Path
 
+from ingestion import ingest_if_needed
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().with_name(".env"))
@@ -9,7 +10,7 @@ import argparse
 import asyncio
 import logging
 
-from chain import get_rag_response, prepare_index
+from chain import get_rag_response
 from samples import DEMO_QUESTIONS
 from schemas import LLMConfig, Provider, RAGResponse
 
@@ -47,6 +48,13 @@ def parse_args() -> argparse.Namespace:
         parser.error("use either --demo or --question, not both")
     return args
 
+def prepare_index() -> int:
+    """Open the local store and index ``data/`` when the collection is empty.
+
+    Called before the prompt so the embedding model is loaded once, up front.
+    """
+    logger.info("Preparing index")
+    return ingest_if_needed()
 
 def print_response(result: RAGResponse) -> None:
     print(f"Answer: {result.answer}", flush=True)
@@ -91,7 +99,7 @@ async def main(args: argparse.Namespace) -> None:
         logger.info("Finished")
         return
 
-    print("TechCorp policy assistant.", flush=True)
+    print("TechCorp policy assistant... ask away!\n\n", flush=True)
     print("Type a question and press Enter. An empty line exits.", flush=True)
     while True:
         question = read_question()

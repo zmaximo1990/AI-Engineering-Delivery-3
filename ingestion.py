@@ -6,7 +6,7 @@ from pathlib import Path
 
 from constants import DATA_DIR
 from processing import DocumentProcessor
-from vectorstore import VectorMemoryManager
+from vectorstore import VectorStoreManager, get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,6 @@ def _chunk_id(source: str, index: int, text: str) -> str:
 
 
 def ingest_if_needed(
-    manager: VectorMemoryManager,
     data_dir: Path | None = None,
 ) -> int:
     """Chunk and persist the corpus when the collection is still empty.
@@ -55,6 +54,9 @@ def ingest_if_needed(
 
     Returns the number of chunks written on this call.
     """
+
+    manager: VectorStoreManager = get_vector_store()
+
     existing = manager.count()
     if existing > 0:
         logger.info(
