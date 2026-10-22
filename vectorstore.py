@@ -15,12 +15,26 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from constants import COLLECTION_NAME, EMBEDDING_MODEL, TOP_K, VECTORSTORE_DIR
+from constants import (
+    COLLECTION_NAME,
+    EMBEDDING_MODEL,
+    SCORE_THRESHOLD,
+    TOP_K,
+    VECTORSTORE_DIR,
+)
 
 logger = logging.getLogger(__name__)
 
 # Disk failures, the local SQLite store, and Chroma server or internal errors.
 _STORE_ERRORS = (OSError, sqlite3.Error, ChromaError)
+
+
+def _l2_relevance_score(distance: float) -> float:
+    """Map Chroma's squared L2 distance to a relevance score in ``[0, 1]``.
+
+    For normalized embeddings, cosine similarity is ``1 - distance / 2``.
+    """
+    return max(0.0, min(1.0, 1.0 - distance / 2.0))
 
 
 class VectorMemoryError(Exception):
@@ -61,6 +75,9 @@ class VectorStoreManager:
             collection_name=collection_name,
             embedding_function=self.embeddings,
             collection_metadata={"embedding_model": embedding_model_name},
+            # Chroma's default space is squared L2, and this collection does not
+            # record that metric. The score function keeps relevance inside [0, 1].
+            relevance_score_fn=_l2_relevance_score,
         )
         self.collection: ChromaDBCollection = self.store._collection
         self._require_matching_embedding_model()
@@ -137,12 +154,26 @@ class VectorStoreManager:
         except _STORE_ERRORS as exc:
             raise VectorMemoryError("Could not delete documents from the vector store.") from exc
 
-    def as_retriever(self, k: int = TOP_K) -> VectorStoreRetriever:
-        """Similarity retriever. ``k`` is clamped to the spec range of 3 to 5."""
+    def as_retriever(
+        self,
+        k: int = TOP_K,
+        score_threshold: float = SCORE_THRESHOLD,
+    ) -> VectorStoreRetriever:
+        """Similarity retriever. ``k`` is clamped to the spec range of 3 to 5.
+
+        ``score_threshold`` is a relevance score in ``[0, 1]``. A higher value
+        keeps only closer fragments. ``0`` keeps every fragment Chroma returns.
+        """
         top_k = min(5, max(3, k))
+        threshold = min(1.0, max(0.0, score_threshold))
+        logger.info(
+            "Retriever ready (k=%d, score_threshold=%.2f)",
+            top_k,
+            threshold,
+        )
         return self.store.as_retriever(
-            search_type="similarity",
-            search_kwargs={"k": top_k},
+            search_type="similarity_score_threshold", # use "similarity" as alternative
+            search_kwargs={"k": top_k, "score_threshold": threshold},
         )
 
 

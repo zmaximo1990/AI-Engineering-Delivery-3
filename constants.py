@@ -43,6 +43,10 @@ def _bounded_int(name: str, default: int, low: int, high: int) -> int:
     return min(high, max(low, _int_env(name, default)))
 
 
+def _bounded_float(name: str, default: float, low: float, high: float) -> float:
+    return min(high, max(low, _float_env(name, default)))
+
+
 DEFAULT_MAX_TOKENS = _int_env("DEFAULT_MAX_TOKENS", 512)
 DEFAULT_TEMPERATURE = _float_env("DEFAULT_TEMPERATURE", 0.0)
 RETRY_ATTEMPTS = _int_env("RETRY_ATTEMPTS", 3)
@@ -56,6 +60,8 @@ MODEL_ENCODING = _env_text("MODEL_ENCODING") or "cl100k_base"
 
 # Keep the prompt small. The spec asks for a top_k between 3 and 5.
 TOP_K = _bounded_int("TOP_K", 4, 3, 5)
+# Relevance score in [0, 1]. Higher keeps only closer matches. 0 keeps them all.
+SCORE_THRESHOLD = _bounded_float("SCORE_THRESHOLD", 0.5, 0.0, 1.0)
 
 EMBEDDING_MODEL = _env_text("EMBEDDING_MODEL") or "sentence-transformers/all-MiniLM-L6-v2"
 COLLECTION_NAME = _env_text("COLLECTION_NAME") or "techcorp_policies"

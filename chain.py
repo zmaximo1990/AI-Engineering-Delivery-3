@@ -71,6 +71,24 @@ def _reject_incomplete(result: dict) -> LLMAnswer:
     return parsed
 
 
+def retrieve_documents(question: str, retriever: VectorStoreRetriever) -> list[Document]:
+    """Search the index and log each fragment that will enter the prompt."""
+    documents = retriever.invoke(question)
+    logger.info("Retrieved %d fragments", len(documents))
+    for index, document in enumerate(documents, start=1):
+        source = document.metadata.get("source", "unknown")
+        chunk_index = document.metadata.get("chunk_index", "?")
+        logger.info(
+            "Fragment %d: source=%s chunk=%s chars=%d\n%s",
+            index,
+            source,
+            chunk_index,
+            len(document.page_content),
+            document.page_content,
+        )
+    return documents
+
+
 def format_documents(documents: list[Document]) -> str:
     """Turn retrieved chunks into the CONTEXT block of the prompt."""
     if not documents:
@@ -122,7 +140,7 @@ def compose_rag_chain(generator: Runnable) -> Runnable:
 
     return (
         RunnablePassthrough.assign(
-            documents=lambda inputs: retriever.invoke(inputs["question"]), # run RAG
+            documents=lambda inputs: retrieve_documents(inputs["question"], retriever), # run RAG
         )
         | RunnablePassthrough.assign(
             context=lambda inputs: format_documents(inputs["documents"]), # format RAG response as LLM prompt context
