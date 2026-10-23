@@ -5,10 +5,16 @@ from pydantic import BaseModel, Field
 from constants import DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 
 
+# LLM providers
 class Provider(str, Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
+
+
+class EmbeddingsProvider(str, Enum):
+    OPENAI = "openai"
+    HUGGINGFACE = "huggingface"
 
 
 class LLMConfig(BaseModel):

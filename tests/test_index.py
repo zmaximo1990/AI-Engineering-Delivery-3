@@ -3,16 +3,15 @@
 from pathlib import Path
 
 import pytest
-from langchain_huggingface import HuggingFaceEmbeddings
 
-from constants import EMBEDDING_MODEL
+from embeddings import HuggingFaceEmbeddings
 from ingestion import ingest_if_needed
 from vectorstore import ChromaStoreManager, VectorStoreManager
 
 
 @pytest.fixture(scope="module")
 def embeddings():
-    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    return HuggingFaceEmbeddings()
 
 
 def _manager(tmp_path: Path, embeddings) -> VectorStoreManager:

@@ -1,7 +1,6 @@
 """Vector store interface and the persistent Chroma backend for indexing and search."""
 
 import logging
-import os
 import sqlite3
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -12,17 +11,16 @@ from chromadb.api.models import Collection as ChromaDBCollection
 from chromadb.config import Settings
 from chromadb.errors import ChromaError
 from langchain_chroma import Chroma
-from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStoreRetriever
-from langchain_huggingface import HuggingFaceEmbeddings
 
 from constants import (
     COLLECTION_NAME,
-    EMBEDDING_MODEL,
     SCORE_THRESHOLD,
     TOP_K,
     VECTORSTORE_DIR,
 )
+from embeddings import BaseEmbeddings
+from factory import EmbeddingsFactory
 
 logger = logging.getLogger(__name__)
 
@@ -50,17 +48,10 @@ class VectorStoreManager(ABC):
     implement persistence and queries.
     """
 
-    def __init__(
-        self,
-        embedding_model_name: str = EMBEDDING_MODEL,
-        embeddings: Embeddings | None = None,
-    ) -> None:
-        self.embedding_model_name = embedding_model_name
-        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
-        self.embeddings = embeddings or HuggingFaceEmbeddings(
-            model_name=embedding_model_name
-        )
+    def __init__(self, embeddings: BaseEmbeddings | None = None) -> None:
+        client = embeddings or EmbeddingsFactory.create()
+        self.embedding_model_name = client.model_name
+        self.embeddings = client.get_embeddings()
 
     @abstractmethod
     def count(self) -> int:
@@ -113,13 +104,9 @@ class ChromaStoreManager(VectorStoreManager):
         self,
         persist_directory: Path | str | None = None,
         collection_name: str = COLLECTION_NAME,
-        embedding_model_name: str = EMBEDDING_MODEL,
-        embeddings: Embeddings | None = None,
+        embeddings: BaseEmbeddings | None = None,
     ) -> None:
-        super().__init__(
-            embedding_model_name=embedding_model_name,
-            embeddings=embeddings,
-        )
+        super().__init__(embeddings=embeddings)
         persist_path = Path(persist_directory or VECTORSTORE_DIR)
         if not persist_path.is_absolute():
             persist_path = Path(__file__).resolve().parent / persist_path
@@ -133,7 +120,7 @@ class ChromaStoreManager(VectorStoreManager):
             client=self.client,
             collection_name=collection_name,
             embedding_function=self.embeddings,
-            collection_metadata={"embedding_model": embedding_model_name},
+            collection_metadata={"embedding_model": self.embedding_model_name},
             # Chroma's default space is squared L2, and this collection does not
             # record that metric. The score function keeps relevance inside [0, 1].
             relevance_score_fn=_l2_relevance_score,
@@ -144,7 +131,7 @@ class ChromaStoreManager(VectorStoreManager):
             "Vector store ready at %s (collection=%s, embedding=%s, documents=%d)",
             persist_path,
             collection_name,
-            embedding_model_name,
+            self.embedding_model_name,
             self.count(),
         )
 

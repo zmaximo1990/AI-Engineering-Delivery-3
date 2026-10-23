@@ -63,7 +63,11 @@ TOP_K = _bounded_int("TOP_K", 4, 3, 5)
 # Relevance score in [0, 1]. Higher keeps only closer matches. 0 keeps them all.
 SCORE_THRESHOLD = _bounded_float("SCORE_THRESHOLD", 0.5, 0.0, 1.0)
 
-EMBEDDING_MODEL = _env_text("EMBEDDING_MODEL") or "sentence-transformers/all-MiniLM-L6-v2"
+HUGGINGFACE_EMBEDDING_MODEL = (
+    _env_text("HUGGINGFACE_EMBEDDING_MODEL") or "sentence-transformers/all-MiniLM-L6-v2"
+)
+OPENAI_EMBEDDING_MODEL = _env_text("OPENAI_EMBEDDING_MODEL") or "text-embedding-3-small"
+EMBEDDING_PROVIDER = _env_text("EMBEDDING_PROVIDER") or "huggingface"
 COLLECTION_NAME = _env_text("COLLECTION_NAME") or "techcorp_policies"
 DATA_DIR = _project_path(_env_text("DATA_DIR") or "data")
 VECTORSTORE_DIR = _project_path(_env_text("VECTORSTORE_DIR") or "vectorstore")
