@@ -1,8 +1,9 @@
-"""Persistent Chroma collection used for indexing and similarity search."""
+"""Vector store interface and the persistent Chroma backend for indexing and search."""
 
 import logging
 import os
 import sqlite3
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
@@ -41,12 +42,72 @@ class VectorMemoryError(Exception):
     """A vector store read or write failed, or the embedding model does not match."""
 
 
-class VectorStoreManager:
-    """CRUD wrapper around a local Chroma collection.
+class VectorStoreManager(ABC):
+    """Contract for indexing and similarity search.
 
     Indexing and search share one embedding model. A different model would
-    make distances meaningless.
+    make distances meaningless. Concrete clients such as Chroma or Pinecone
+    implement persistence and queries.
     """
+
+    def __init__(
+        self,
+        embedding_model_name: str = EMBEDDING_MODEL,
+        embeddings: Embeddings | None = None,
+    ) -> None:
+        self.embedding_model_name = embedding_model_name
+        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+        self.embeddings = embeddings or HuggingFaceEmbeddings(
+            model_name=embedding_model_name
+        )
+
+    @abstractmethod
+    def count(self) -> int:
+        """Return the number of documents in the collection."""
+        ...
+
+    @abstractmethod
+    def upsert_documents(
+        self,
+        ids: list[str],
+        documents: list[str],
+        metadatas: list[dict[str, Any]],
+    ) -> None:
+        """Insert documents, or replace them when the id already exists."""
+        ...
+
+    @abstractmethod
+    def semantic_search(
+        self,
+        query_text: str,
+        n_results: int = TOP_K,
+        where: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return the nearest documents. Lower distance means a closer match."""
+        ...
+
+    @abstractmethod
+    def delete_by_id(self, ids: list[str]) -> None:
+        """Remove documents by id."""
+        ...
+
+    @abstractmethod
+    def as_retriever(
+        self,
+        k: int = TOP_K,
+        score_threshold: float = SCORE_THRESHOLD,
+    ) -> VectorStoreRetriever:
+        """Similarity retriever. ``k`` is clamped to the spec range of 3 to 5.
+
+        ``score_threshold`` is a relevance score in ``[0, 1]``. A higher value
+        keeps only closer fragments. ``0`` keeps every fragment the store returns.
+        """
+        ...
+
+
+class ChromaStoreManager(VectorStoreManager):
+    """CRUD wrapper around a local Chroma collection."""
 
     def __init__(
         self,
@@ -54,18 +115,16 @@ class VectorStoreManager:
         collection_name: str = COLLECTION_NAME,
         embedding_model_name: str = EMBEDDING_MODEL,
         embeddings: Embeddings | None = None,
-    ):
+    ) -> None:
+        super().__init__(
+            embedding_model_name=embedding_model_name,
+            embeddings=embeddings,
+        )
         persist_path = Path(persist_directory or VECTORSTORE_DIR)
         if not persist_path.is_absolute():
             persist_path = Path(__file__).resolve().parent / persist_path
         persist_path.mkdir(parents=True, exist_ok=True)
 
-        self.embedding_model_name = embedding_model_name
-        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
-        self.embeddings = embeddings or HuggingFaceEmbeddings(
-            model_name=embedding_model_name
-        )
         self.client = chromadb.PersistentClient(
             path=str(persist_path),
             settings=Settings(anonymized_telemetry=False),
@@ -181,8 +240,8 @@ _manager: VectorStoreManager | None = None
 
 
 def get_vector_store() -> VectorStoreManager:
-    """Return the process-wide store so the embedding model is loaded once."""
+    """Return the process-wide store so the embedding model is loaded once (singleton)."""
     global _manager
     if _manager is None:
-        _manager = VectorStoreManager()
+        _manager = ChromaStoreManager()
     return _manager

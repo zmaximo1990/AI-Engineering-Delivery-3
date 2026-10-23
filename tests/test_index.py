@@ -7,7 +7,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 from constants import EMBEDDING_MODEL
 from ingestion import ingest_if_needed
-from vectorstore import VectorStoreManager
+from vectorstore import ChromaStoreManager, VectorStoreManager
 
 
 @pytest.fixture(scope="module")
@@ -16,7 +16,7 @@ def embeddings():
 
 
 def _manager(tmp_path: Path, embeddings) -> VectorStoreManager:
-    return VectorStoreManager(
+    return ChromaStoreManager(
         persist_directory=tmp_path / "vectorstore",
         collection_name="test_policies",
         embeddings=embeddings,
