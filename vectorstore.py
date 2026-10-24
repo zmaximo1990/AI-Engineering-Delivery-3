@@ -36,7 +36,7 @@ def _l2_relevance_score(distance: float) -> float:
     return max(0.0, min(1.0, 1.0 - distance / 2.0))
 
 
-class VectorMemoryError(Exception):
+class VectorStoreError(Exception):
     """A vector store read or write failed, or the embedding model does not match."""
 
 
@@ -138,7 +138,7 @@ class ChromaStoreManager(VectorStoreManager):
     def _require_matching_embedding_model(self) -> None:
         recorded = (self.collection.metadata or {}).get("embedding_model")
         if recorded and recorded != self.embedding_model_name:
-            raise VectorMemoryError(
+            raise VectorStoreError(
                 f"This collection was indexed with '{recorded}', "
                 f"but the configured embedding model is '{self.embedding_model_name}'. "
                 "Use the same model for indexing and search."
@@ -167,7 +167,7 @@ class ChromaStoreManager(VectorStoreManager):
                 embeddings=vectors,
             )
         except _STORE_ERRORS as exc:
-            raise VectorMemoryError("Could not write documents to the vector store.") from exc
+            raise VectorStoreError("Could not write documents to the vector store.") from exc
 
     def semantic_search(
         self,
@@ -183,7 +183,7 @@ class ChromaStoreManager(VectorStoreManager):
                 filter=where,
             )
         except _STORE_ERRORS as exc:
-            raise VectorMemoryError("Could not query the vector store.") from exc
+            raise VectorStoreError("Could not query the vector store.") from exc
         return [
             {
                 "document": document.page_content,
@@ -198,7 +198,7 @@ class ChromaStoreManager(VectorStoreManager):
         try:
             self.store.delete(ids=ids)
         except _STORE_ERRORS as exc:
-            raise VectorMemoryError("Could not delete documents from the vector store.") from exc
+            raise VectorStoreError("Could not delete documents from the vector store.") from exc
 
     def as_retriever(
         self,
