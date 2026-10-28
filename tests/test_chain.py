@@ -30,6 +30,16 @@ class StubRetriever:
         return self.documents
 
 
+class _StubStore:
+    """Stand-in for the store that ``compose_rag_chain`` opens itself."""
+
+    def __init__(self, retriever: StubRetriever):
+        self._retriever = retriever
+
+    def as_retriever(self) -> StubRetriever:
+        return self._retriever
+
+
 def _result(*, finish_reason="stop", parsed=None, parsing_error=None):
     return {
         "raw": AIMessage(
@@ -78,7 +88,7 @@ def test_assemble_response_reads_sources_from_metadata():
     )
 
 
-def test_chain_adds_context_and_assembles_sources():
+def test_chain_adds_context_and_assembles_sources(monkeypatch):
     documents = [
         Document(
             page_content="Los empleados con menos de 5 años acceden a 14 días corridos.",
@@ -86,7 +96,8 @@ def test_chain_adds_context_and_assembles_sources():
         )
     ]
     retriever = StubRetriever(documents)
-    chain = compose_rag_chain(retriever, RunnableLambda(_answer_from_context))
+    monkeypatch.setattr("chain.get_vector_store", lambda: _StubStore(retriever))
+    chain = compose_rag_chain(RunnableLambda(_answer_from_context))
 
     result = asyncio.run(chain.ainvoke({"question": "¿Cuántos días de vacaciones?"}))
 
@@ -96,17 +107,18 @@ def test_chain_adds_context_and_assembles_sources():
     assert result.retrieved_fragments == 1
 
 
-def test_chain_keeps_retrieved_sources_when_the_model_refuses():
+def test_chain_keeps_retrieved_sources_when_the_model_refuses(monkeypatch):
     documents = [
         Document(
             page_content="Las contraseñas deben tener un mínimo de 12 caracteres.",
             metadata={"source": "politica_seguridad_informatica.md"},
         )
     ]
-    chain = compose_rag_chain(
-        StubRetriever(documents),
-        RunnableLambda(_answer_from_context),
+    monkeypatch.setattr(
+        "chain.get_vector_store",
+        lambda: _StubStore(StubRetriever(documents)),
     )
+    chain = compose_rag_chain(RunnableLambda(_answer_from_context))
 
     result = asyncio.run(chain.ainvoke({"question": "¿Cuál es el salario del CEO?"}))
 

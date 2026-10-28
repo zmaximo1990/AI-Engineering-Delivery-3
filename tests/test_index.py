@@ -22,15 +22,16 @@ def _manager(tmp_path: Path, embeddings) -> VectorStoreManager:
     )
 
 
-def test_ingest_persists_and_second_call_skips(tmp_path, embeddings):
+def test_ingest_persists_and_second_call_skips(tmp_path, embeddings, monkeypatch):
     data_dir = Path(__file__).resolve().parents[1] / "data"
     manager = _manager(tmp_path, embeddings)
+    monkeypatch.setattr("ingestion.get_vector_store", lambda: manager)
 
-    written = ingest_if_needed(manager, data_dir)
+    written = ingest_if_needed(data_dir)
     assert written >= 4
     assert manager.count() == written
 
-    skipped = ingest_if_needed(manager, data_dir)
+    skipped = ingest_if_needed(data_dir)
     assert skipped == 0
     assert manager.count() == written
 
@@ -39,11 +40,14 @@ def test_ingest_persists_and_second_call_skips(tmp_path, embeddings):
     assert hits[0]["metadata"]["source"] == "politica_vacaciones.md"
 
 
-def test_reopen_reads_the_same_collection(tmp_path, embeddings):
+def test_reopen_reads_the_same_collection(tmp_path, embeddings, monkeypatch):
     data_dir = Path(__file__).resolve().parents[1] / "data"
     first = _manager(tmp_path, embeddings)
-    written = ingest_if_needed(first, data_dir)
+    active = {"manager": first}
+    monkeypatch.setattr("ingestion.get_vector_store", lambda: active["manager"])
+    written = ingest_if_needed(data_dir)
 
     reopened = _manager(tmp_path, embeddings)
+    active["manager"] = reopened
     assert reopened.count() == written
-    assert ingest_if_needed(reopened, data_dir) == 0
+    assert ingest_if_needed(data_dir) == 0
